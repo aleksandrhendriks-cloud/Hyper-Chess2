@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hyper Chess — Kings, Queens, Rooks, Bishops, Pawns and Knights</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; padding: 18px;
+  background: #171b25; color: #f4f6fb;
+  font-family: Arial, sans-serif; display: flex; justify-content: center;
+}
+.game { width: min(100%, 850px); }
+h1 { text-align: center; letter-spacing: 4px; margin: 4px 0 8px; }
+.subtitle { text-align: center; color: #aeb8c8; margin: 0 0 16px; }
+.statusbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+#turn { font-weight: bold; font-size: 18px; }
+#message { color: #c4ccda; font-size: 14px; }
+.board-wrap { overflow-x: auto; padding: 3px; }
+.board {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(14, minmax(0, 1fr));
+  width: min(100%, 650px);
+  aspect-ratio: 10 / 14;
+  margin: auto;
+  border: 5px solid #343c4b;
+  box-shadow: 0 10px 35px #0008;
+  user-select: none;
+}
+.square {
+  position: relative; display: flex; align-items: center;
+  justify-content: center; min-width: 0; min-height: 0;
+  cursor: pointer;
+}
+.land-light { background: #f0d9b5; }
+.land-dark { background: #b58863; }
+.water {
+  cursor: pointer; background: #17658a;
+  background-image:
+    radial-gradient(circle at 30% 30%, #ffffff20 2px, transparent 3px),
+    radial-gradient(circle at 70% 70%, #ffffff15 2px, transparent 3px);
+  border: 1px solid #ffffff12;
+}
+.water::after {
+  content: "≈"; color: #a9e5ff;
+  font-size: clamp(10px, 2vw, 22px); opacity: .45;
+}
+.coord {
+  position: absolute; top: 2px; left: 3px;
+  color: #222; opacity: .62; font-size: clamp(6px, .9vw, 10px);
+  pointer-events: none;
+}
+.piece {
+  z-index: 1;
+  font-family: "Segoe UI Symbol", "DejaVu Sans", serif;
+  font-size: clamp(23px, 5.3vw, 43px);
+  line-height: 1; pointer-events: none;
+}
+.white-piece { color: #fffdf4; text-shadow: 0 1px 2px #222, 0 0 3px #222; }
+.black-piece { color: #171717; text-shadow: 0 1px 1px #fff7; }
+.selected { outline: 4px solid #facc15; outline-offset: -4px; }
+.attacked-square { background: #b3261e !important; }
+.target::before {
+  content: ""; position: absolute; width: 27%; aspect-ratio: 1;
+  border-radius: 50%; background: #176b38bb; z-index: 2;
+}
+.capture-target::before {
+  width: 82%; aspect-ratio: 1; border-radius: 50%;
+  background: transparent; border: 4px solid #b3261e;
+}
+.ship-target::before { content: ""; position: absolute; width: 27%; aspect-ratio: 1; border-radius: 50%; background: #facc15; z-index: 2; }
+.bomb-target::before {
+  content: ""; position: absolute; width: 72%; aspect-ratio: 1;
+  border-radius: 50%; border: 4px dashed #d18a00; background: #facc1522; z-index: 2;
+}
+.bomb {
+  z-index: 2; font-size: clamp(20px, 4.4vw, 36px);
+  line-height: 1; pointer-events: none;
+}
+.swap-target::before {
+  width: 82%; aspect-ratio: 1; border-radius: 50%;
+  background: transparent; border: 4px solid #2563eb;
+}
+
+.controls {
+  display: flex; justify-content: center; gap: 10px;
+  margin: 16px 0; flex-wrap: wrap;
+}
+.promotion-picker {
+  background: #222a38; border: 1px solid #59677e;
+  border-radius: 10px; padding: 12px; align-items: center;
+}
+.promotion-picker[hidden] { display: none; }
+.promotion-picker strong { color: white; }
+button {
+  border: 0; border-radius: 7px; padding: 10px 17px;
+  background: #d7e2f2; color: #17202d; font-weight: bold;
+  cursor: pointer;
+}
+button:disabled { opacity: .4; cursor: not-allowed; }
+.rules {
+  background: #222a38; border: 1px solid #394457;
+  border-radius: 10px; padding: 13px 16px;
+  line-height: 1.5; color: #d5dcea; font-size: 13px;
+}
+.rules strong { color: white; }
+@media (max-width: 480px) {
+  body { padding: 8px; }
+  .board { width: 100%; }
+  .piece { font-size: clamp(19px, 6vw, 31px); }
+}
+</style>
+</head>
+<body>
+<main class="game">
+  <h1>HYPER CHESS</h1>
+  <p class="subtitle">Kings, queens, rooks, bishops, pawns, knights and four warships · checkmate · castling · four promotion choices · 12 ranks × 8 files</p>
+
+  <div class="statusbar">
+    <div id="turn">White to move</div>
+    <div id="message" aria-live="polite">Select one of your pieces.</div>
+  </div>
+
+
+  <div class="board-wrap">
+    <div class="board" id="board" aria-label="12 by 8 chessboard with queens, rooks, bishops, pawns and knights"></div>
+  </div>
+
+  <div class="controls">
+    <button id="undo" disabled>Undo move</button>
+    <button id="restart">Restart</button>
+    <button id="rotateBoard" type="button" aria-pressed="false">Rotate board 180°</button>
+    <button id="deployMiniQueen" hidden>Deploy mini-queen</button>
+    <button id="placeBomb" hidden>Place bomb</button>
+  </div>
+  <div id="promotionPicker" class="controls promotion-picker" hidden aria-live="polite">
+    <strong>Choose pawn promotion:</strong>
+    <button type="button" data-promotion="Queen">Queen ♕</button>
+    <button type="button" data-promotion="Bishop">Bishop ♗</button>
+    <button type="button" data-promotion="Knight">Knight ♘</button>
+    <button type="button" data-promotion="Rook">Rook ♖</button>
+  </div>
+
+  <section class="rules">
+    <strong>Current test rules</strong><br>
+    Kings move one square in any direction, cannot move into check, and are required for checkmate. Kings may capture undefended enemy pieces, swap places with adjacent friendly pieces, and are immune to rook explosions. Castling follows standard chess rules, subject to the usual clear-path and check restrictions. The board starts with one king per side on e1 and e12, one queen per side on d1 and d12, eight pawns per side on
+    ranks 2 and 11, two knights per side on b1/g1 and b12/g12, two bishops per side,
+    and rooks in the four corners. Four warships begin on the water directly behind those rooks, one behind each rook.
+    Warships move horizontally or vertically like rooks, but only through water squares. Friendly warships block their route; enemy warships can be jumped over but cannot be captured or landed upon. Each warship carries one bomb and may place it on an empty land square along its inward rook-like attack line. A bomb destroys any non-king piece that lands on it; a king safely removes it. When captured, the bomb returns to the warship that placed it.
+    Pawns move one square forward, sideways, or diagonally forward; they may also move
+    two squares forward if both squares are clear. They cannot move backwards or en passant.
+    Reaching the farthest rank lets a pawn promote to a queen, bishop, knight, or rook.
+    Queens move any distance horizontally, vertically, or diagonally, like a standard
+    chess queen. Each queen can deploy up to three mini-queens on squares it could
+    reach with a queen move. Mini-queens move one square in any direction and cannot
+    give check or checkmate. Captured mini-queens return to their owner's reserve;
+    a queen can also collect its own mini-queens by moving onto them. Bishops move diagonally and
+    may ricochet once per move from an outer wall or enemy piece; capturing ends their move.
+    Knights cannot move adjacent. They make a standard L-shaped leap and may repeat that
+    exact leap once in the same direction. Enemies on intermediate squares are captured;
+    landing on an enemy also captures it and ends the move.
+    Rooks move horizontally or vertically and capture every enemy piece along their chosen
+    path. Friendly pieces block their path. When captured, a rook explodes, destroying enemy
+    pieces immediately to its left and right on the same rank, as well as the piece
+    that captured the rook.
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const boardEl = document.getElementById("board");
+const turnEl = document.getElementById("turn");
+const messageEl = document.getElementById("message");
+const undoBtn = document.getElementById("undo");
+const restartBtn = document.getElementById("restart");
+const rotateBoardBtn = document.getElementById("rotateBoard");
+let boardFlipped = false;
+const deployMiniQueenBtn = document.getElementById("deployMiniQueen");
+const placeBombBtn = document.getElementById("placeBomb");
+const promotionPicker = document.getElementById("promotionPicker");
+
+const FILES = "abcdefgh";
+const GLYPHS = {
+  whiteKing: "♔", blackKing: "♚",
+  whiteQueen: "♕", blackQueen: "♛",
+  whiteMiniQueen: "♕", blackMiniQueen: "♛",
+  whiteRook: "♖", blackRook: "♜",
+  whiteBishop: "♗", blackBishop: "♝",
+  whiteKnight: "♘", blackKnight: "♞",
+  whitePawn: "♙", blackPawn: "♟︎"
+};
+
+function sideOf(piece) {
+  if (!piece) return null;
+  return piece.startsWith("white") ? "white" : "black";
+}
+
+function kindOf(piece) {
+  return piece ? piece.slice(5).toLowerCase() : null;
+}
+
+function initialPieces() {
+  const setup = {
+    d1: "whiteQueen",
+    d12: "blackQueen",
+    e1: "whiteKing",
+    e12: "blackKing",
+    a1: "whiteRook",
+    h1: "whiteRook",
+    b1: "whiteKnight",
+    g1: "whiteKnight",
+    c1: "whiteBishop",
+    f1: "whiteBishop",
+    a12: "blackRook",
+    h12: "blackRook",
+    b12: "blackKnight",
+    g12: "blackKnight",
+    c12: "blackBishop",
+    f12: "blackBishop"
+  };
+
+  // Standard pawn setup: White starts on rank 2, Black on rank 11.
+  for (const file of FILES) {
+    setup[file + "2"] = "whitePawn";
+    setup[file + "11"] = "blackPawn";
+  }
+  return setup;
+}
+
+let pieces;
+let warships;
+let bombs;
+let selectedShip = null;
+let shipTargets = [];
+let bombTargets = [];
+let bombMode = false;
+let turn;
+let selected;
+let legalTargets;
+let history;
+let pendingPromotion = null;
+let miniQueenReserve;
+let castlingRights;
+let deployMode = false;
+
+function initialCastlingRights() {
+  return {
+    white: { kingSide: true, queenSide: true },
+    black: { kingSide: true, queenSide: true }
+  };
+}
+
+function cloneCastlingRights(rights) {
+  return {
+    white: { ...rights.white },
+    black: { ...rights.black }
+  };
+}
+
+function revokeRookRight(square, side) {
+  const homeRank = side === "white" ? 1 : 12;
+  if (square === "h" + homeRank) castlingRights[side].kingSide = false;
+  if (square === "a" + homeRank) castlingRights[side].queenSide = false;
+}
+
+function clonePieces(source) {
+  return { ...source };
+}
+
+
+function initialWarships() {
+  // Each ship begins in the water immediately behind one of its side's rooks.
+  return {
+    whiteLeft: { side: "white", pos: "0,12", bombAvailable: true },
+    whiteRight: { side: "white", pos: "9,12", bombAvailable: true },
+    blackLeft: { side: "black", pos: "0,1", bombAvailable: true },
+    blackRight: { side: "black", pos: "9,1", bombAvailable: true }
+  };
+}
+
+function initialBombs() {
+  return {};
+}
+
+function cloneBombs(source) {
+  return Object.fromEntries(Object.entries(source || {}).map(([square, bomb]) => [square, { ...bomb }]));
+}
+
+function getBombTargets(shipId) {
+  const ship = warships?.[shipId];
+  if (!ship || !ship.bombAvailable) return [];
+
+  const [col, row] = ship.pos.split(",").map(Number);
+  let dc = 0, dr = 0;
+
+  // A ship projects a rook-like firing line inward from the water border.
+  if (col === 0 && row >= 1 && row <= 12) dc = 1;
+  else if (col === 9 && row >= 1 && row <= 12) dc = -1;
+  else if (row === 0 && col >= 1 && col <= 8) dr = 1;
+  else if (row === 13 && col >= 1 && col <= 8) dr = -1;
+  else return [];
+
+  const targets = [];
+  let c = col + dc, r = row + dr;
+  while (c >= 1 && c <= 8 && r >= 1 && r <= 12) {
+    const square = squareName(c - 1, 12 - (r - 1));
+    // Pieces and existing bombs obstruct the line. Bombs may only occupy empty squares.
+    if (pieces[square] || bombs[square]) break;
+    targets.push(square);
+    c += dc;
+    r += dr;
+  }
+  return targets;
+}
+
+function isWaterCell(col, row) {
+  return col >= 0 && col < 10 && row >= 0 && row < 14 &&
+    (row === 0 || row === 13 || col === 0 || col === 9);
+}
+
+function getWarshipMoves(shipId) {
+  const ship = warships[shipId];
+  if (!ship) return [];
+  const [col, row] = ship.pos.split(",").map(Number);
+  const moves = [];
+  for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    let c = col + dc, r = row + dr;
+    while (isWaterCell(c, r)) {
+      const destination = `${c},${r}`;
+      const occupant = Object.values(warships).find(other => other.pos === destination);
+      if (occupant) {
+        // Friendly warships block the route; enemy warships may be jumped over.
+        if (occupant.side === ship.side) break;
+        c += dc;
+        r += dr;
+        continue;
+      }
+      moves.push(destination);
+      c += dc; r += dr;
+    }
+  }
+  return moves;
+}
+
+function deployBomb(square) {
+  if (!selectedShip || !bombMode || !bombTargets.includes(square)) return;
+  const ship = warships[selectedShip];
+  if (!ship || ship.side !== turn || !ship.bombAvailable) return;
+
+  history.push({
+    pieces: clonePieces(pieces),
+    warships: cloneWarships(warships),
+    bombs: cloneBombs(bombs),
+    turn,
+    miniQueenReserve: { ...miniQueenReserve },
+    castlingRights: cloneCastlingRights(castlingRights)
+  });
+
+  const mover = turn;
+  ship.bombAvailable = false;
+  bombs[square] = { side: mover, shipId: selectedShip };
+  turn = turn === "white" ? "black" : "white";
+  selected = null;
+  selectedShip = null;
+  shipTargets = [];
+  bombTargets = [];
+  bombMode = false;
+  deployMode = false;
+  messageEl.textContent = `${mover} warship placed a bomb on ${square}.`;
+  render();
+  updateCheckStatus();
+}
+
+function executeWarshipMove(shipId, destination) {
+  if (!selectedShip || shipId !== selectedShip) return;
+  const ship = warships[shipId];
+  if (!ship || ship.side !== turn || !getWarshipMoves(shipId).includes(destination)) return;
+  history.push({
+    pieces: clonePieces(pieces),
+    warships: cloneWarships(warships),
+    bombs: cloneBombs(bombs),
+    turn,
+    miniQueenReserve: { ...miniQueenReserve },
+    castlingRights: cloneCastlingRights(castlingRights)
+  });
+  ship.pos = destination;
+  const mover = turn;
+  turn = turn === "white" ? "black" : "white";
+  selected = null;
+  selectedShip = null;
+  shipTargets = [];
+  bombTargets = [];
+  bombMode = false;
+  deployMode = false;
+  messageEl.textContent = `${mover} warship moved through the water to ${destination}.`;
+  render();
+  updateCheckStatus();
+}
+
+function cloneWarships(source) {
+  return Object.fromEntries(Object.entries(source).map(([id, ship]) => [id, { ...ship }]));
+}
+
+function squareName(file, rank) {
+  return FILES[file] + rank;
+}
+
+function parseSquare(name) {
+  return {
+    file: FILES.indexOf(name[0]),
+    rank: Number(name.slice(1))
+  };
+}
+
+function inside(file, rank) {
+  return file >= 0 && file < 8 && rank >= 1 && rank <= 12;
+}
+
+/* Hyper Chess movement:
+   Pawns move forward, sideways, forward-diagonally, or two squares forward
+   from their starting rank. They cannot move backwards or en passant.
+   Knights retain adjacent movement and may make up to two L-shaped leaps,
+   automatically capturing an enemy on the intermediate square of each leap.
+   Bishops use their separate ricochet movement rules. */
+function getLegalMoves(from) {
+  const origin = parseSquare(from);
+  const movingPiece = pieces[from];
+  const movingSide = sideOf(movingPiece);
+  const kind = kindOf(movingPiece);
+
+  if (kind === "pawn") {
+    const moves = [];
+    const direction = movingSide === "white" ? 1 : -1;
+
+    // One square forward, if empty; two squares forward if the path is clear.
+    const oneForwardRank = origin.rank + direction;
+    if (inside(origin.file, oneForwardRank)) {
+      const oneForward = squareName(origin.file, oneForwardRank);
+      if (!pieces[oneForward]) {
+        moves.push({ to: oneForward, capture: false, captures: [] });
+
+        const twoForwardRank = origin.rank + direction * 2;
+        if (inside(origin.file, twoForwardRank)) {
+          const twoForward = squareName(origin.file, twoForwardRank);
+          if (!pieces[twoForward]) {
+            moves.push({ to: twoForward, capture: false, captures: [] });
+          }
+        }
+      }
+    }
+
+    // One square sideways. Empty squares are moves; enemy-occupied squares are captures.
+    for (const df of [-1, 1]) {
+      const file = origin.file + df;
+      const rank = origin.rank;
+      if (!inside(file, rank)) continue;
+
+      const destination = squareName(file, rank);
+      const occupant = pieces[destination];
+      if (!occupant) {
+        moves.push({ to: destination, capture: false, captures: [] });
+      } else if (sideOf(occupant) !== movingSide) {
+        moves.push({ to: destination, capture: true, captures: [destination] });
+      }
+    }
+
+    // A pawn may move one square diagonally forward only.
+    // Empty forward-diagonal squares are legal moves; enemies there can be captured.
+    for (const df of [-1, 1]) {
+      const file = origin.file + df;
+      const rank = origin.rank + direction;
+      if (!inside(file, rank)) continue;
+
+      const destination = squareName(file, rank);
+      const occupant = pieces[destination];
+      if (!occupant) {
+        moves.push({ to: destination, capture: false, captures: [] });
+      } else if (sideOf(occupant) !== movingSide) {
+        moves.push({ to: destination, capture: true, captures: [destination] });
+      }
+    }
+
+    // A pawn may also capture an enemy directly forward.
+    if (inside(origin.file, oneForwardRank)) {
+      const destination = squareName(origin.file, oneForwardRank);
+      const occupant = pieces[destination];
+      if (occupant && sideOf(occupant) !== movingSide) {
+        moves.push({ to: destination, capture: true, captures: [destination] });
+      }
+    }
+
+    return moves;
+  }
+
+  if (kind === "knight") {
+    const moves = [];
+
+    // A knight has no adjacent movement. Its first leap is a standard
+    // chess-knight L-shaped move. The only permitted second leap repeats
+    // that exact L-shaped displacement in the same direction.
+    const leapDirections = [
+      [2, 1], [2, -1], [-2, 1], [-2, -1],
+      [1, 2], [1, -2], [-1, 2], [-1, -2]
+    ];
+
+    function attemptLeap(file, rank, df, dr, board, captures, leapCount, route) {
+      const nextFile = file + df;
+      const nextRank = rank + dr;
+      if (!inside(nextFile, nextRank)) return;
+
+      const landing = squareName(nextFile, nextRank);
+      const landingPiece = board[landing];
+      if (landingPiece && sideOf(landingPiece) === movingSide) return;
+
+      const updatedBoard = { ...board };
+      const updatedCaptures = [...captures];
+
+      // The intermediate square is the square one step along the
+      // two-square leg of the L. Enemy pieces there are captured.
+      const middleFile = Math.abs(df) === 2 ? file + Math.sign(df) : file;
+      const middleRank = Math.abs(dr) === 2 ? rank + Math.sign(dr) : rank;
+      const middle = squareName(middleFile, middleRank);
+      const middlePiece = updatedBoard[middle];
+
+      if (middlePiece && sideOf(middlePiece) !== movingSide) {
+        updatedCaptures.push(middle);
+        delete updatedBoard[middle];
+      }
+
+      if (landingPiece && sideOf(landingPiece) !== movingSide) {
+        updatedCaptures.push(landing);
+        delete updatedBoard[landing];
+      }
+
+      const nextRoute = [...route, landing];
+      const nextLeapCount = leapCount + 1;
+
+      moves.push({
+        to: landing,
+        capture: updatedCaptures.length > 0,
+        captures: updatedCaptures,
+        leapCount: nextLeapCount,
+        routeKey: "leap:" + nextRoute.join(">")
+      });
+
+      // Landing on an enemy captures it and ends the knight's move.
+      // Capturing an intermediate enemy does not interrupt the leap.
+      if (landingPiece) return;
+
+      // Exactly one second-leap destination is allowed: repeat the
+      // same L-shaped displacement in the same direction.
+      if (nextLeapCount === 1) {
+        attemptLeap(
+          nextFile, nextRank, df, dr,
+          updatedBoard, updatedCaptures, 1, nextRoute
+        );
+      }
+    }
+
+    for (const [df, dr] of leapDirections) {
+      attemptLeap(origin.file, origin.rank, df, dr, pieces, [], 0, []);
+    }
+
+    return moves;
+  }
+
+  if (kind === "miniqueen") {
+    const moves = [];
+    for (let df = -1; df <= 1; df++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (df === 0 && dr === 0) continue;
+        const file = origin.file + df;
+        const rank = origin.rank + dr;
+        if (!inside(file, rank)) continue;
+        const destination = squareName(file, rank);
+        const occupant = pieces[destination];
+        if (occupant && sideOf(occupant) === movingSide) continue;
+        moves.push({
+          to: destination,
+          capture: !!occupant,
+          captures: occupant ? [destination] : [],
+          miniQueenMove: true,
+          routeKey: "mini-queen:" + destination
+        });
+      }
+    }
+    return moves;
+  }
+
+  if (kind === "king") {
+    const moves = [];
+    for (let df = -1; df <= 1; df++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (df === 0 && dr === 0) continue;
+        const file = origin.file + df;
+        const rank = origin.rank + dr;
+        if (!inside(file, rank)) continue;
+        const destination = squareName(file, rank);
+        const occupant = pieces[destination];
+        if (occupant && sideOf(occupant) === movingSide) {
+          // The King can exchange places with any adjacent friendly piece.
+          moves.push({
+            to: destination,
+            capture: false,
+            captures: [],
+            kingMove: true,
+            swapWithFriendly: true,
+            routeKey: "king-swap:" + destination
+          });
+          continue;
+        }
+        moves.push({
+          to: destination,
+          capture: !!occupant,
+          captures: occupant ? [destination] : [],
+          kingMove: true,
+          routeKey: "king:" + destination
+        });
+      }
+    }
+
+    // Standard castling on the king's home rank. The king may not castle
+    // out of, through, or into check; every square between king and rook
+    // must be empty. Castling rights are lost permanently after king/rook moves.
+    const homeRank = movingSide === "white" ? 1 : 12;
+    const enemy = movingSide === "white" ? "black" : "white";
+    if (from === "e" + homeRank &&
+        castlingRights[movingSide] &&
+        !isSquareAttacked(from, enemy)) {
+      const kingRookSquare = "h" + homeRank;
+      if (castlingRights[movingSide].kingSide &&
+          pieces[kingRookSquare] === movingSide + "Rook" &&
+          !pieces["f" + homeRank] && !pieces["g" + homeRank] &&
+          !isSquareAttacked("f" + homeRank, enemy) &&
+          !isSquareAttacked("g" + homeRank, enemy)) {
+        moves.push({
+          to: "g" + homeRank, captures: [], capture: false,
+          kingMove: true, castle: "kingSide",
+          rookFrom: kingRookSquare, rookTo: "f" + homeRank,
+          routeKey: "castle:kingSide"
+        });
+      }
+      const queenRookSquare = "a" + homeRank;
+      if (castlingRights[movingSide].queenSide &&
+          pieces[queenRookSquare] === movingSide + "Rook" &&
+          !pieces["b" + homeRank] && !pieces["c" + homeRank] &&
+          !pieces["d" + homeRank] &&
+          !isSquareAttacked("d" + homeRank, enemy) &&
+          !isSquareAttacked("c" + homeRank, enemy)) {
+        moves.push({
+          to: "c" + homeRank, captures: [], capture: false,
+          kingMove: true, castle: "queenSide",
+          rookFrom: queenRookSquare, rookTo: "d" + homeRank,
+          routeKey: "castle:queenSide"
+        });
+      }
+    }
+    return moves;
+  }
+
+  if (kind === "queen") {
+    const moves = [];
+    const directions = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [1, 1], [1, -1], [-1, 1], [-1, -1]
+    ];
+
+    // Standard queen movement: any distance along a rank, file, or diagonal.
+    // Friendly pieces block; an enemy can be captured, ending that ray.
+    for (const [df, dr] of directions) {
+      let file = origin.file;
+      let rank = origin.rank;
+
+      while (true) {
+        file += df;
+        rank += dr;
+        if (!inside(file, rank)) break;
+
+        const destination = squareName(file, rank);
+        const occupant = pieces[destination];
+
+        const collectsOwnMiniQueen = occupant &&
+          sideOf(occupant) === movingSide &&
+          kindOf(occupant) === "miniqueen";
+        if (occupant && sideOf(occupant) === movingSide && !collectsOwnMiniQueen) break;
+
+        const captures = occupant ? [destination] : [];
+        moves.push({
+          to: destination,
+          capture: captures.length > 0,
+          captures,
+          collectsMiniQueen: collectsOwnMiniQueen,
+          queenPath: true,
+          routeKey: "queen:" + df + ":" + dr + ":" + destination
+        });
+
+        if (occupant) break;
+      }
+    }
+
+    return moves;
+  }
+
+  if (kind === "rook") {
+    const moves = [];
+    const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    // A rook travels in a straight orthogonal line. It can pass through
+    // and capture any number of enemy pieces on that line. Friendly pieces
+    // still block its path. The selected destination determines where it stops.
+    for (const [df, dr] of directions) {
+      let file = origin.file;
+      let rank = origin.rank;
+      const captures = [];
+
+      while (true) {
+        file += df;
+        rank += dr;
+        if (!inside(file, rank)) break;
+
+        const destination = squareName(file, rank);
+        const occupant = pieces[destination];
+
+        if (occupant && sideOf(occupant) === movingSide) break;
+
+        if (occupant && sideOf(occupant) !== movingSide) {
+          captures.push(destination);
+        }
+
+        moves.push({
+          to: destination,
+          capture: captures.length > 0,
+          captures: [...captures],
+          rookPath: true,
+          routeKey: "rook:" + df + ":" + dr + ":" + destination
+        });
+      }
+    }
+
+    return moves;
+  }
+
+  // Bishop movement and its existing ricochet rules.
+  const allMoves = [];
+
+  function addMove(to, captures, ricochet, routeKey) {
+    allMoves.push({
+      to,
+      capture: captures.length > 0,
+      captures: [...captures],
+      ricochet: ricochet ? { ...ricochet } : null,
+      routeKey
+    });
+  }
+
+  function trace(
+    file, rank, df, dr, hasRicocheted, captures,
+    visited, protectedSquares, ricochet, routeKey
+  ) {
+    while (true) {
+      let nextFile = file + df;
+      let nextRank = rank + dr;
+
+      const hitsFileWall = nextFile < 0 || nextFile >= 8;
+      const hitsRankWall = nextRank < 1 || nextRank > 12;
+
+      if (hitsFileWall || hitsRankWall) {
+        if (hasRicocheted) return;
+        if (hitsFileWall) df *= -1;
+        if (hitsRankWall) dr *= -1;
+        hasRicocheted = true;
+        ricochet = { type: "wall", square: null, direction: "wall" };
+        nextFile = file + df;
+        nextRank = rank + dr;
+      }
+
+      if (!inside(nextFile, nextRank)) return;
+
+      const destination = squareName(nextFile, nextRank);
+      if (visited.has(destination) || protectedSquares.has(destination)) return;
+
+      const occupant = pieces[destination];
+      if (occupant && sideOf(occupant) === movingSide) return;
+
+      const nextVisited = new Set(visited);
+      nextVisited.add(destination);
+
+      if (occupant && sideOf(occupant) !== movingSide) {
+        // Capturing ends the bishop's move immediately.
+        const capturesAfterTaking = [...captures, destination];
+        addMove(
+          destination,
+          capturesAfterTaking,
+          ricochet,
+          routeKey + "|take-and-stop:" + destination
+        );
+
+        // Or leave the enemy untouched and ricochet away from it.
+        if (!hasRicocheted) {
+          const protectedAfterBounce = new Set(protectedSquares);
+          protectedAfterBounce.add(destination);
+
+          trace(
+            file, rank, -df, dr, true, captures,
+            new Set(visited), protectedAfterBounce,
+            { type: "piece", square: destination, direction: "horizontal" },
+            routeKey + "|bounce-horizontal:" + destination
+          );
+          trace(
+            file, rank, df, -dr, true, captures,
+            new Set(visited), protectedAfterBounce,
+            { type: "piece", square: destination, direction: "vertical" },
+            routeKey + "|bounce-vertical:" + destination
+          );
+        }
+        return;
+      }
+
+      addMove(destination, captures, ricochet, routeKey);
+      file = nextFile;
+      rank = nextRank;
+    }
+  }
+
+  for (const df of [-1, 1]) {
+    for (const dr of [-1, 1]) {
+      trace(
+        origin.file, origin.rank, df, dr, false, [],
+        new Set([from]), new Set(), null, "normal:" + df + ":" + dr
+      );
+    }
+  }
+
+  return allMoves;
+}
+
+
+function kingSquare(side) {
+  return Object.keys(pieces).find(square =>
+    pieces[square] === side + "King"
+  ) || null;
+}
+
+// Hyper Chess attack map: pawn captures use this variant's forward,
+// sideways and forward-diagonal capture directions. Other pieces use
+// their established movement routes, including knight leap captures.
+function isSquareAttacked(target, bySide) {
+  for (const from of Object.keys(pieces)) {
+    if (sideOf(pieces[from]) !== bySide) continue;
+    const kind = kindOf(pieces[from]);
+    // Mini-queens may capture pieces but are explicitly unable to give check
+    // or prevent a king from moving by threatening its square.
+    if (kind === "miniqueen") continue;
+    if (kind === "king") {
+      const {file, rank} = parseSquare(from);
+      const {file: tf, rank: tr} = parseSquare(target);
+      if (Math.max(Math.abs(tf - file), Math.abs(tr - rank)) === 1) return true;
+      continue;
+    }
+    if (kind === "pawn") {
+      const {file, rank} = parseSquare(from);
+      const direction = bySide === "white" ? 1 : -1;
+      const {file: tf, rank: tr} = parseSquare(target);
+      if ((tf === file && tr === rank + direction) ||
+          (tr === rank && Math.abs(tf-file) === 1) ||
+          (Math.abs(tf-file) === 1 && tr === rank + direction)) return true;
+      continue;
+    }
+    const routes = getLegalMoves(from);
+    if (routes.some(move => move.to === target || (move.captures || []).includes(target))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function positionAfterMove(move, from) {
+  const before = pieces;
+  const beforeBombs = bombs;
+  const next = clonePieces(pieces);
+  const nextBombs = cloneBombs(bombs);
+  const mover = turn;
+  const movingPiece = next[from];
+  const movingKind = kindOf(movingPiece);
+  const captures = new Set(move.captures || []);
+  const rooks = [...captures].filter(sq => kindOf(next[sq]) === "rook");
+  for (const rookSquare of rooks) {
+    const {file, rank} = parseSquare(rookSquare);
+    const rookSide = sideOf(next[rookSquare]);
+    for (const df of [-1, 1]) {
+      const f = file + df;
+      if (!inside(f, rank)) continue;
+      const blast = squareName(f, rank);
+      const blastPiece = next[blast];
+      // Kings are immune to rook explosions.
+      if (blastPiece && kindOf(blastPiece) !== "king" &&
+          sideOf(blastPiece) !== rookSide) captures.add(blast);
+    }
+  }
+  const swappedPiece = move.swapWithFriendly ? next[move.to] : null;
+  const bombAtDestination = !!nextBombs[move.to];
+  if (bombAtDestination) delete nextBombs[move.to];
+  delete next[from];
+  for (const sq of captures) delete next[sq];
+  // Kings safely remove bombs; every other piece is destroyed by one.
+  const moverDestroyedByRook = rooks.length > 0 && movingKind !== "king";
+  const moverDestroyedByBomb = bombAtDestination && movingKind !== "king";
+  if (!moverDestroyedByRook && !moverDestroyedByBomb) next[move.to] = movingPiece;
+  if (move.swapWithFriendly) next[from] = swappedPiece;
+  if (move.castle) {
+    next[move.rookTo] = next[move.rookFrom];
+    delete next[move.rookFrom];
+  }
+  pieces = next;
+  bombs = nextBombs;
+  const ownKing = kingSquare(mover);
+  const safe = !!ownKing && !isSquareAttacked(ownKing, mover === "white" ? "black" : "white");
+  pieces = before;
+  bombs = beforeBombs;
+  return safe;
+}
+
+function getSafeMoves(from) {
+  return getLegalMoves(from).filter(move => {
+    // Kings are never physically captured; the game ends by checkmate.
+    if ((move.captures || []).some(square => kindOf(pieces[square]) === "king")) return false;
+    if (kindOf(pieces[move.to]) === "king") return false;
+    return positionAfterMove(move, from);
+  });
+}
+
+function sideHasLegalMove(side) {
+  const previousTurn = turn;
+  turn = side;
+  const hasMove = Object.keys(pieces).some(from =>
+    sideOf(pieces[from]) === side && getSafeMoves(from).length > 0
+  );
+  turn = previousTurn;
+  return hasMove;
+}
+
+function updateCheckStatus() {
+  const checkedSide = turn;
+  const king = kingSquare(checkedSide);
+  if (!king) {
+    messageEl.textContent = `Checkmate — ${checkedSide === "white" ? "Black" : "White"} wins.`;
+    turnEl.textContent = "Game over";
+    selected = null;
+    return true;
+  }
+  const inCheck = isSquareAttacked(king, checkedSide === "white" ? "black" : "white");
+  const hasMoves = sideHasLegalMove(checkedSide);
+  if (inCheck && !hasMoves) {
+    messageEl.textContent = `Checkmate — ${checkedSide === "white" ? "Black" : "White"} wins.`;
+    turnEl.textContent = "Game over";
+    selected = null;
+    return true;
+  }
+  messageEl.textContent = inCheck
+    ? `${checkedSide} is in check.`
+    : `${checkedSide} to move.`;
+  return false;
+}
+
+function render() {
+  boardEl.innerHTML = "";
+  legalTargets = selected ? getSafeMoves(selected) : [];
+  shipTargets = selectedShip && !bombMode ? getWarshipMoves(selectedShip) : [];
+  bombTargets = selectedShip && bombMode ? getBombTargets(selectedShip) : [];
+
+  for (let row = 0; row < 14; row++) {
+    for (let col = 0; col < 10; col++) {
+      // Reverse both display axes when flipped, while preserving the
+      // underlying square coordinates and all game state.
+      const boardRow = boardFlipped ? 13 - row : row;
+      const boardCol = boardFlipped ? 9 - col : col;
+      const cell = document.createElement("div");
+      cell.className = "square";
+
+      const isWater =
+        boardRow === 0 || boardRow === 13 || boardCol === 0 || boardCol === 9;
+
+      if (isWater) {
+        cell.classList.add("water");
+        const waterPos = `${boardCol},${boardRow}`;
+        const shipEntry = Object.entries(warships).find(([, ship]) => ship.pos === waterPos);
+        if (shipEntry) {
+          const [shipId, ship] = shipEntry;
+          const shipEl = document.createElement("span");
+          shipEl.className = "piece " + (ship.side === "white" ? "white-piece" : "black-piece");
+          shipEl.textContent = ship.side === "white" ? "⛵" : "🚢";
+          shipEl.setAttribute("aria-label", ship.side + " warship");
+          cell.appendChild(shipEl);
+          if (selectedShip === shipId) cell.classList.add("selected");
+        }
+        if (selectedShip && shipTargets.includes(waterPos)) cell.classList.add("ship-target");
+        cell.addEventListener("click", () => handleWaterSquare(waterPos));
+      } else {
+        const file = boardCol - 1;
+        const rank = 12 - (boardRow - 1);
+        const name = squareName(file, rank);
+
+        cell.classList.add(
+          (file + rank) % 2 === 0 ? "land-light" : "land-dark"
+        );
+
+        const coordinate = document.createElement("span");
+        coordinate.className = "coord";
+        coordinate.textContent = name;
+        cell.appendChild(coordinate);
+
+        if (bombs[name]) {
+          const bombEl = document.createElement("span");
+          bombEl.className = "bomb";
+          bombEl.textContent = "💣";
+          bombEl.setAttribute("aria-label", "land mine");
+          cell.appendChild(bombEl);
+        }
+        if (bombTargets.includes(name)) cell.classList.add("bomb-target");
+
+        if (selected === name) {
+          cell.classList.add("selected");
+        }
+
+        const target = legalTargets.find(move => move.to === name);
+        const attackedEnemySquare = !!selected && !!pieces[name] &&
+          sideOf(pieces[name]) !== sideOf(pieces[selected]) &&
+          legalTargets.some(move => (move.captures || []).includes(name));
+        const routeCaptureTarget = legalTargets.some(
+          move => (move.leapCount || move.rookPath) &&
+            move.captures.includes(name) && move.to !== name
+        );
+        if (attackedEnemySquare) {
+          cell.classList.add("attacked-square");
+          cell.title = "This enemy piece is attacked by the selected piece.";
+        }
+        if (target) {
+          if (target.swapWithFriendly) cell.classList.add("swap-target");
+          else cell.classList.add(pieces[name] ? "capture-target" : "target");
+          if (target.swapWithFriendly) {
+            cell.title = "Swap the King with this friendly piece.";
+          }
+        } else if (routeCaptureTarget) {
+          cell.classList.add("capture-target");
+          cell.title = "This enemy piece will be captured along the selected route.";
+        }
+
+        if (pieces[name]) {
+          const piece = document.createElement("span");
+          piece.className =
+            "piece " + (sideOf(pieces[name]) === "white" ? "white-piece" : "black-piece");
+          piece.textContent = GLYPHS[pieces[name]];
+          piece.setAttribute("aria-label", sideOf(pieces[name]) + " " + kindOf(pieces[name]));
+          cell.appendChild(piece);
+        }
+
+        cell.addEventListener("click", () => handleSquare(name));
+      }
+
+      boardEl.appendChild(cell);
+    }
+  }
+
+  turnEl.textContent = turn[0].toUpperCase() + turn.slice(1) + " to move";
+  undoBtn.disabled = history.length <= 1 || !!pendingPromotion;
+  deployMiniQueenBtn.hidden = !selected || kindOf(pieces[selected]) !== "queen";
+  deployMiniQueenBtn.disabled = !deployMode && (!miniQueenReserve || miniQueenReserve[turn] <= 0);
+  deployMiniQueenBtn.textContent = deployMode
+    ? "Cancel deployment"
+    : `Deploy mini-queen (${miniQueenReserve ? miniQueenReserve[turn] : 0} remaining)`;
+
+  placeBombBtn.hidden = !selectedShip;
+  if (selectedShip) {
+    const ship = warships[selectedShip];
+    const hasClearBombLine = getBombTargets(selectedShip).length > 0;
+    placeBombBtn.disabled = !bombMode && (!ship?.bombAvailable || !hasClearBombLine);
+    placeBombBtn.textContent = bombMode
+      ? "Cancel bomb placement"
+      : !ship?.bombAvailable
+        ? "Bomb already used"
+        : hasClearBombLine ? "Place bomb (1 available)" : "No clear bomb line";
+    placeBombBtn.title = !ship?.bombAvailable
+      ? "This warship has already used its one bomb."
+      : !hasClearBombLine
+        ? "Move the warship along the water to find an unobstructed line into the land board."
+        : "Choose an empty land square along the warship's inward line.";
+  } else {
+    placeBombBtn.disabled = true;
+    placeBombBtn.textContent = "Place bomb";
+    placeBombBtn.title = "";
+  }
+}
+
+function executeMove(move) {
+  if (!selected) return;
+
+  history.push({
+    pieces: clonePieces(pieces),
+    warships: cloneWarships(warships),
+    bombs: cloneBombs(bombs),
+    turn,
+    miniQueenReserve: { ...miniQueenReserve },
+    castlingRights: cloneCastlingRights(castlingRights)
+  });
+
+  const mover = turn;
+  const movingPiece = pieces[selected];
+  const movingKind = kindOf(movingPiece);
+  const swappedPiece = move.swapWithFriendly ? pieces[move.to] : null;
+  const capturedBomb = bombs[move.to] || null;
+  const bombAtDestination = !!capturedBomb;
+  if (capturedBomb) {
+    delete bombs[move.to];
+    // Recover the bomb to the warship that originally placed it.
+    if (warships[capturedBomb.shipId]) {
+      warships[capturedBomb.shipId].bombAvailable = true;
+    }
+  }
+  const moverDestroyedByBomb = bombAtDestination && movingKind !== "king";
+  const capturedSquares = [...(move.captures || [])];
+
+  if (movingKind === "king") {
+    castlingRights[mover].kingSide = false;
+    castlingRights[mover].queenSide = false;
+  }
+  if (movingKind === "rook") revokeRookRight(selected, mover);
+  if (swappedPiece && kindOf(swappedPiece) === "rook") {
+    revokeRookRight(move.to, mover);
+  }
+  for (const square of capturedSquares) {
+    if (kindOf(pieces[square]) === "rook") {
+      revokeRookRight(square, sideOf(pieces[square]));
+    }
+  }
+
+  // Every captured rook detonates. Its blast destroys enemy pieces on the
+  // immediately adjacent horizontal squares (same rank, one file left/right),
+  // and the piece that captured the rook is destroyed as well.
+  const rookSquaresCaptured = capturedSquares.filter(
+    square => kindOf(pieces[square]) === "rook"
+  );
+  const allCaptured = new Set(capturedSquares);
+  for (const rookSquare of rookSquaresCaptured) {
+    const rookSide = sideOf(pieces[rookSquare]);
+    const { file, rank } = parseSquare(rookSquare);
+    for (const df of [-1, 1]) {
+      const blastFile = file + df;
+      if (!inside(blastFile, rank)) continue;
+      const blastSquare = squareName(blastFile, rank);
+      const blastPiece = pieces[blastSquare];
+      if (blastPiece && kindOf(blastPiece) !== "king" &&
+          sideOf(blastPiece) !== rookSide) {
+        allCaptured.add(blastSquare);
+      }
+    }
+  }
+
+  // Kings are immune to rook blasts, including the counter-explosion.
+  const moverDestroyedByRook =
+    rookSquaresCaptured.length > 0 && movingKind !== "king";
+
+  for (const square of allCaptured) {
+    if (kindOf(pieces[square]) === "rook") {
+      revokeRookRight(square, sideOf(pieces[square]));
+    }
+  }
+
+  for (const square of allCaptured) {
+    const capturedPiece = pieces[square];
+    if (capturedPiece && kindOf(capturedPiece) === "miniqueen") {
+      miniQueenReserve[sideOf(capturedPiece)]++;
+    }
+  }
+  if ((moverDestroyedByRook || moverDestroyedByBomb) && movingKind === "miniqueen") {
+    miniQueenReserve[mover]++;
+  }
+
+  delete pieces[selected];
+  for (const square of allCaptured) {
+    delete pieces[square];
+  }
+  // Capturing a rook is fatal to the capturing piece, even if the rook was
+  // intercepted partway along a multi-capture route.
+  if (!moverDestroyedByRook && !moverDestroyedByBomb) {
+    pieces[move.to] = movingPiece;
+  }
+  if (move.swapWithFriendly) {
+    pieces[selected] = swappedPiece;
+  }
+  if (move.castle) {
+    pieces[move.rookTo] = pieces[move.rookFrom];
+    delete pieces[move.rookFrom];
+  }
+
+  const destinationRank = parseSquare(move.to).rank;
+  const promoted = !moverDestroyedByRook && !moverDestroyedByBomb && movingKind === "pawn" &&
+    ((mover === "white" && destinationRank === 12) ||
+     (mover === "black" && destinationRank === 1));
+
+  if (promoted) {
+    pendingPromotion = { side: mover, square: move.to };
+    selected = null;
+    promotionPicker.hidden = false;
+    messageEl.textContent = `${mover} pawn reached the final rank. Choose Queen, Bishop, Knight, or Rook.`;
+    render();
+    return;
+  }
+
+  turn = turn === "white" ? "black" : "white";
+  selected = null;
+
+  if (moverDestroyedByRook && moverDestroyedByBomb) {
+    messageEl.textContent = `${mover} ${movingKind} was destroyed by a rook explosion and a bomb.`;
+  } else if (moverDestroyedByRook) {
+    messageEl.textContent = `${mover} ${movingKind} captured a rook and was destroyed by its explosion.`;
+  } else if (moverDestroyedByBomb) {
+    messageEl.textContent = `${mover} ${movingKind} landed on a bomb and was destroyed. The bomb returned to the warship that placed it.`;
+  } else if (movingKind === "king" && bombAtDestination) {
+    messageEl.textContent = `${mover} king safely removed a bomb. It returned to the warship that placed it.`;
+  } else if (movingKind === "knight" && move.leapCount) {
+    messageEl.textContent = capturedSquares.length
+      ? `${mover} knight completed ${move.leapCount} leap(s) and captured ${capturedSquares.length} piece(s), including enemies directly in its leap paths.`
+      : `${mover} knight completed ${move.leapCount} leap(s).`;
+  } else if (movingKind === "rook" && rookSquaresCaptured.length) {
+    messageEl.textContent = `${mover} rook captured ${capturedSquares.length} piece(s) and detonated ${rookSquaresCaptured.length} rook(s), destroying ${allCaptured.size - capturedSquares.length} additional horizontally adjacent enemy piece(s).`;
+  } else if (move.collectsMiniQueen) {
+    messageEl.textContent = `${mover} queen collected its mini-queen.`;
+  } else if (movingKind === "rook" && capturedSquares.length) {
+    messageEl.textContent = `${mover} rook captured ${capturedSquares.length} piece(s) along its path.`;
+  } else if (move.ricochet?.type === "piece") {
+    messageEl.textContent = capturedSquares.length
+      ? `${mover} bishop ricocheted off ${move.ricochet.square} and captured ${capturedSquares.length} other piece(s).`
+      : `${mover} bishop ricocheted off ${move.ricochet.square}.`;
+  } else if (move.ricochet?.type === "wall") {
+    messageEl.textContent = `${mover} bishop made a wall ricochet.`;
+  } else {
+    messageEl.textContent = capturedSquares.length
+      ? `${mover} ${movingKind} captured a piece.`
+      : `${mover} ${movingKind} moved to ${move.to}.`;
+  }
+
+  render();
+  updateCheckStatus();
+}
+
+function deployMiniQueen(to) {
+  if (!selected || kindOf(pieces[selected]) !== "queen" ||
+      !deployMode || miniQueenReserve[turn] <= 0) return;
+
+  // Mini-queens may only be deployed on the 8×12 land board.
+  if (!/^[a-h](?:[1-9]|1[0-2])$/.test(to)) {
+    messageEl.textContent = "Mini-queens can only be deployed on land.";
+    return;
+  }
+
+  const move = legalTargets.find(option => option.to === to);
+  if (!move) return;
+
+  const occupant = pieces[to];
+  // Deployment may capture an enemy, but cannot be placed on a friendly piece
+  // or used to collect an existing friendly mini-queen.
+  if (occupant && sideOf(occupant) === turn) return;
+
+  history.push({
+    pieces: clonePieces(pieces),
+    warships: cloneWarships(warships),
+    bombs: cloneBombs(bombs),
+    turn,
+    miniQueenReserve: { ...miniQueenReserve },
+    castlingRights: cloneCastlingRights(castlingRights)
+  });
+
+  const mover = turn;
+  const capturedSquares = [...(move.captures || [])];
+  const rookSquaresCaptured = capturedSquares.filter(
+    square => kindOf(pieces[square]) === "rook"
+  );
+  const allCaptured = new Set(capturedSquares);
+
+  for (const rookSquare of rookSquaresCaptured) {
+    const rookSide = sideOf(pieces[rookSquare]);
+    const { file, rank } = parseSquare(rookSquare);
+    for (const df of [-1, 1]) {
+      const blastFile = file + df;
+      if (!inside(blastFile, rank)) continue;
+      const blastSquare = squareName(blastFile, rank);
+      const blastPiece = pieces[blastSquare];
+      if (blastPiece && sideOf(blastPiece) !== rookSide) allCaptured.add(blastSquare);
+    }
+  }
+
+  for (const square of allCaptured) {
+    if (kindOf(pieces[square]) === "rook") {
+      revokeRookRight(square, sideOf(pieces[square]));
+    }
+    const capturedPiece = pieces[square];
+    if (capturedPiece && kindOf(capturedPiece) === "miniqueen") {
+      miniQueenReserve[sideOf(capturedPiece)]++;
+    }
+  }
+
+  for (const square of allCaptured) delete pieces[square];
+
+  miniQueenReserve[mover]--;
+  const capturedBomb = bombs[to] || null;
+  const bombAtTarget = !!capturedBomb;
+  if (capturedBomb) {
+    delete bombs[to];
+    // Recover the bomb to the warship that originally placed it.
+    if (warships[capturedBomb.shipId]) {
+      warships[capturedBomb.shipId].bombAvailable = true;
+    }
+  }
+  if (rookSquaresCaptured.length || bombAtTarget) {
+    // A deployed mini-queen is destroyed immediately by a rook blast or bomb.
+    miniQueenReserve[mover]++;
+    messageEl.textContent = bombAtTarget
+      ? `${mover} deployed a mini-queen onto a bomb; the mini-queen was destroyed and the bomb detonated.`
+      : `${mover} mini-queen captured a rook and was destroyed by its explosion.`;
+  } else {
+    pieces[to] = mover + "MiniQueen";
+    messageEl.textContent = occupant
+      ? `${mover} deployed a mini-queen, capturing the enemy ${kindOf(occupant)}.`
+      : `${mover} deployed a mini-queen on ${to}.`;
+  }
+
+  turn = turn === "white" ? "black" : "white";
+  selected = null;
+  deployMode = false;
+  render();
+}
+
+function choosePromotion(kind) {
+  if (!pendingPromotion || !["Queen", "Bishop", "Knight", "Rook"].includes(kind)) return;
+
+  const { side, square } = pendingPromotion;
+  pieces[square] = side + kind;
+  pendingPromotion = null;
+  promotionPicker.hidden = true;
+  turn = turn === "white" ? "black" : "white";
+  messageEl.textContent = `${side} pawn promoted to a ${kind.toLowerCase()}.`;
+  render();
+  updateCheckStatus();
+}
+
+function handleWaterSquare(position) {
+  if (pendingPromotion) return;
+
+  if (bombMode) {
+    messageEl.textContent = "Bombs can only be placed on highlighted land squares.";
+    render();
+    return;
+  }
+
+  // Water is never a valid mini-queen deployment surface. Ignore water clicks
+  // while deploying so the selected queen and deployment mode remain intact.
+  if (deployMode) {
+    messageEl.textContent = "Mini-queens can only be deployed on land. Choose a highlighted land square.";
+    render();
+    return;
+  }
+
+  if (selectedShip) {
+    if (shipTargets.includes(position)) {
+      executeWarshipMove(selectedShip, position);
+      return;
+    }
+  }
+  const entry = Object.entries(warships).find(([, ship]) => ship.pos === position);
+  if (entry && entry[1].side === turn) {
+    selected = null;
+    selectedShip = selectedShip === entry[0] ? null : entry[0];
+    deployMode = false;
+    messageEl.textContent = selectedShip
+      ? "Choose a highlighted water square. Warships move like rooks along the water; friendly warships block them, while enemy warships can be jumped over."
+      : "Select one of your pieces or warships.";
+  } else {
+    selected = null;
+    selectedShip = null;
+    messageEl.textContent = "That is not a legal warship destination.";
+  }
+  render();
+}
+
+function handleSquare(name) {
+  if (pendingPromotion) return;
+
+  if (bombMode) {
+    if (bombTargets.includes(name)) deployBomb(name);
+    else {
+      messageEl.textContent = "Choose one of the highlighted empty land squares to place the bomb.";
+      render();
+    }
+    return;
+  }
+
+  selectedShip = null;
+  shipTargets = [];
+  if (!kingSquare("white") || !kingSquare("black") ||
+      (!sideHasLegalMove(turn) && isSquareAttacked(kingSquare(turn), turn === "white" ? "black" : "white"))) return;
+  if (deployMode) {
+    deployMiniQueen(name);
+    return;
+  }
+  if (selected) {
+    const matchingMoves = legalTargets.filter(option => option.to === name);
+    if (matchingMoves.length) {
+      // Destination determines the move. Do not ask the player to choose
+      // between routes that arrive at the same square.
+      // For empty destinations, prefer a route without incidental captures.
+      // For occupied enemy destinations, the capture is the only legal way
+      // to finish on that occupied square.
+      const destinationOccupied = !!pieces[name];
+      const friendlyOccupied = destinationOccupied && sideOf(pieces[name]) === turn;
+      const choices = friendlyOccupied
+        ? matchingMoves.filter(move => move.swapWithFriendly || move.collectsMiniQueen)
+        : destinationOccupied
+          ? matchingMoves.filter(move => move.captures.includes(name))
+          : matchingMoves;
+      if (choices.length) {
+        if (kindOf(pieces[selected]) === "knight") {
+          choices.sort((a, b) =>
+            b.captures.length - a.captures.length ||
+            (b.leapCount || 0) - (a.leapCount || 0)
+          );
+        } else {
+          choices.sort((a, b) =>
+            a.captures.length - b.captures.length ||
+            (a.ricochet ? 1 : 0) - (b.ricochet ? 1 : 0)
+          );
+        }
+        executeMove(choices[0]);
+        return;
+      }
+    }
+  }
+
+  if (sideOf(pieces[name]) === turn) {
+    selectedShip = null;
+    bombMode = false;
+    selected = selected === name ? null : name;
+    messageEl.textContent = selected
+      ? (kindOf(pieces[selected]) === "queen"
+          ? "Choose a highlighted square to move the queen, or deploy a mini-queen using the button."
+          : kindOf(pieces[selected]) === "miniQueen"
+            ? "Choose an adjacent square. Mini-queens move one square in any direction."
+            : kindOf(pieces[selected]) === "knight"
+          ? "Choose a highlighted destination. A knight has no adjacent moves. It can make a first L-shaped leap and, if possible, repeat that exact leap once in the same direction; red rings mark enemies it will capture along the route."
+          : kindOf(pieces[selected]) === "rook"
+            ? "Choose a highlighted destination along a straight line. The rook captures every enemy piece along its route; friendly pieces block it."
+            : "Choose a highlighted destination. Red rings mark captures.")
+      : "Select one of your pieces.";
+  } else {
+    selected = null;
+    messageEl.textContent = "That is not a legal destination.";
+  }
+  render();
+}
+
+function undoMove() {
+  if (pendingPromotion || history.length <= 1) return;
+
+  const previous = history.pop();
+  pieces = clonePieces(previous.pieces);
+  warships = cloneWarships(previous.warships || initialWarships());
+  bombs = cloneBombs(previous.bombs || initialBombs());
+  turn = previous.turn;
+  miniQueenReserve = { ...previous.miniQueenReserve };
+  castlingRights = cloneCastlingRights(previous.castlingRights);
+  selected = null;
+  selectedShip = null;
+  bombMode = false;
+  shipTargets = [];
+  bombTargets = [];
+  deployMode = false;
+  messageEl.textContent = "Last move undone.";
+  render();
+  updateCheckStatus();
+}
+
+function restart() {
+  pendingPromotion = null;
+  promotionPicker.hidden = true;
+  deployMode = false;
+  miniQueenReserve = { white: 3, black: 3 };
+  castlingRights = initialCastlingRights();
+  warships = initialWarships();
+  bombs = initialBombs();
+  selectedShip = null;
+  bombMode = false;
+  shipTargets = [];
+  bombTargets = [];
+  pieces = initialPieces();
+  turn = "white";
+  selected = null;
+  history = [{
+    pieces: clonePieces(pieces), warships: cloneWarships(warships),
+    bombs: cloneBombs(bombs), turn,
+    miniQueenReserve: { ...miniQueenReserve },
+    castlingRights: cloneCastlingRights(castlingRights)
+  }];
+  messageEl.textContent = "Select one of your pieces.";
+  render();
+  updateCheckStatus();
+}
+
+undoBtn.addEventListener("click", undoMove);
+restartBtn.addEventListener("click", restart);
+rotateBoardBtn.addEventListener("click", () => {
+  boardFlipped = !boardFlipped;
+  rotateBoardBtn.setAttribute("aria-pressed", String(boardFlipped));
+  rotateBoardBtn.textContent = boardFlipped ? "Return board to original view" : "Rotate board 180°";
+  render();
+});
+placeBombBtn.addEventListener("click", () => {
+  if (!selectedShip) return;
+  if (bombMode) {
+    bombMode = false;
+    messageEl.textContent = "Bomb placement cancelled. Choose a water square to move the warship or select another piece.";
+  } else {
+    if (!warships[selectedShip]?.bombAvailable || getBombTargets(selectedShip).length === 0) return;
+    selected = null;
+    deployMode = false;
+    bombMode = true;
+    messageEl.textContent = "Choose a highlighted empty land square along the warship's inward line to place its bomb.";
+  }
+  render();
+});
+
+deployMiniQueenBtn.addEventListener("click", () => {
+  if (!selected || kindOf(pieces[selected]) !== "queen") return;
+  if (deployMode) {
+    deployMode = false;
+    messageEl.textContent = "Mini-queen deployment cancelled. Choose a queen move or select another piece.";
+  } else {
+    if (miniQueenReserve[turn] <= 0) return;
+    deployMode = true;
+    messageEl.textContent = "Choose a highlighted square to deploy a mini-queen. It may capture an enemy on that square.";
+  }
+  render();
+});
+promotionPicker.querySelectorAll("[data-promotion]").forEach(button => {
+  button.addEventListener("click", () => choosePromotion(button.dataset.promotion));
+});
+
+restart();
+</script>
+</body>
+</html>
